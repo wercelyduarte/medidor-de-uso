@@ -1,0 +1,15 @@
+{
+  "name": "mods-wercely",
+  "owner": {
+    "name": "Wercely"
+  },
+  "plugins": [
+    {
+      "name": "consumo-do-plano",
+      "source": "./"
+    }
+  ],
+  "metadata": {
+    "description": "Mods de Wercely para o Claude Code"
+  }
+}

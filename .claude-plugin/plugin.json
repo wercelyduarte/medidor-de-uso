@@ -1,0 +1,10 @@
+{
+  "name": "consumo-do-plano",
+  "version": "0.2.1",
+  "description": "Painel ao lado do chat com o consumo do plano: limites de 5 horas e 7 dias, contexto e custo da sessão",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Wercely"
+  },
+  "license": "MIT"
+}
