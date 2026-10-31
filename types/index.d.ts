@@ -9,7 +9,7 @@ export type Medicao = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'consumo-do-plano': {
+    'medidor-de-uso': {
       medicao: Shaped<Medicao | null>
       detalhado: boolean
     }

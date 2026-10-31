@@ -3,17 +3,17 @@ import type { Register, SessionUsage } from 'claude-code'
 
 import type { Janela, Medicao } from '../types'
 
-const PANE = 'consumo-do-plano'
-const TITULO = 'Consumo do plano'
+const PANE = 'medidor-de-uso'
+const TITULO = 'Medidor de uso'
 // Change the tag when Medicao's fields change: it declines what an earlier
 // version stored, which outlives a reload.
 const medicao = atom(
-  { plugin: 'consumo-do-plano', key: 'medicao' } as const,
+  { plugin: 'medidor-de-uso', key: 'medicao' } as const,
   null as Medicao | null,
   { shape: 'medicao-2' },
 )
 // The view the person chose; kept across sessions in $.store under this key.
-const detalhado = atom({ plugin: 'consumo-do-plano', key: 'detalhado' } as const, false)
+const detalhado = atom({ plugin: 'medidor-de-uso', key: 'detalhado' } as const, false)
 const PREFERENCIA = 'detalhado'
 
 const NOMES: Record<string, string> = {
@@ -70,7 +70,7 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'consumo',
-      description: 'Abre o painel com o consumo do plano',
+      description: 'Abre o medidor de uso do plano',
     })
     const u = await $.session.usage()
     const agora = await $.clock.now()
@@ -85,7 +85,7 @@ export const register: Register = on => {
   on('command.run', { command: 'consumo' }, async $ => {
     await $.ui.open({ id: PANE, title: TITULO, columns: 32 })
 
-    return { text: 'Painel de consumo aberto.' }
+    return { text: 'Medidor de uso aberto.' }
   })
 
   on('session.measure', async ($, e, next) => {

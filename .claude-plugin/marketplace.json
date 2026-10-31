@@ -5,7 +5,7 @@
   },
   "plugins": [
     {
-      "name": "consumo-do-plano",
+      "name": "medidor-de-uso",
       "source": "./"
     }
   ],

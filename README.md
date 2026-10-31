@@ -1,4 +1,4 @@
-# Consumo do plano
+# Medidor de uso para Claude Code
 
 Painel que fica ao lado do chat no Claude Code (aba Code do app desktop, terminal e VS Code) e mostra quanto do seu plano já foi usado:
 
@@ -19,24 +19,24 @@ Os números vêm das próprias respostas do Claude e se atualizam a cada respost
 Dentro do Claude Code:
 
 ```
-/plugin install consumo-do-plano --marketplace wercelyduarte/consumo-do-plano
+/plugin install medidor-de-uso --marketplace wercelyduarte/medidor-de-uso
 ```
 
 Ou num terminal:
 
 ```
-claude plugin install consumo-do-plano --marketplace wercelyduarte/consumo-do-plano
+claude plugin install medidor-de-uso --marketplace wercelyduarte/medidor-de-uso
 ```
 
 Responda `y` para adicionar o marketplace e escolha o escopo de usuário.
 
-No app desktop (aba Code): clique no **+** ao lado da caixa de mensagem, depois **Plugins**, **Add marketplace** com `wercelyduarte/consumo-do-plano`, e então **Add plugin**.
+No app desktop (aba Code): clique no **+** ao lado da caixa de mensagem, depois **Plugins**, **Add marketplace** com `wercelyduarte/medidor-de-uso`, e então **Add plugin**.
 
 ## Uso
 
 - O painel abre sozinho ao iniciar uma sessão, no modo compacto. O botão **Detalhes** mostra a versão completa e **Compacto** volta; a escolha fica guardada.
 - Feche no X do painel; `/consumo` abre de novo.
-- Para desligar de vez: **+** ao lado da caixa de mensagem, **Plugins**, e desative "consumo-do-plano".
+- Para desligar de vez: **+** ao lado da caixa de mensagem, **Plugins**, e desative "medidor-de-uso".
 
 A API de mods do Claude Code ainda está em acesso antecipado e pode mudar entre versões.
 

@@ -1,11 +1,11 @@
 import { expect, test } from 'claude-code/testing'
 
 const PANE = {
-  plugin: 'consumo-do-plano',
+  plugin: 'medidor-de-uso',
   component: 'Pane',
-  requestId: 'consumo-do-plano',
+  requestId: 'medidor-de-uso',
   props: {
-    title: 'Consumo do plano',
+    title: 'Medidor de uso',
     isFocused: false,
     bodyColumns: 32,
     placement: 'dock',
