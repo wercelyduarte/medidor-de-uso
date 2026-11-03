@@ -63,3 +63,52 @@ test('compacto por padrão, Detalhes alterna e lembra a escolha', async ($, on) 
   expect(guardado.detalhado).toBe(true)
   await ui.unmount()
 })
+
+const FAIXA = {
+  plugin: 'medidor-de-uso',
+  component: 'AbovePrompt',
+  surface: 'desktop',
+  props: {
+    hasSurvey: false,
+    isWorking: false,
+    maxRows: 10,
+    bodyColumns: 80,
+    scroll: { offset: 0, bodyRows: 10 },
+  },
+} as const
+
+test('linha acima da caixa: painel não abre sozinho e cores por faixa', async ($, on) => {
+  const abertos: string[] = []
+  on('command.register', () => ({ value: { command: 'consumo' } }))
+  on('ui.open', (_, e) => {
+    abertos.push(e.id)
+
+    return { value: { isPlaced: true } }
+  })
+  on('clock.now', () => ({ value: Date.parse('2026-10-31T18:00:00Z') }))
+  on('store.get', () => ({ value: undefined }))
+  on('session.usage', () => ({
+    value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] },
+  }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  expect(abertos).toEqual([])
+
+  await $.session.measure({
+    context: { window: 200000, tokens: 50000, percent: 25 },
+    rateLimits: [
+      { kind: 'five_hour', percentUsed: 42.5 },
+      { kind: 'seven_day', percentUsed: 91 },
+    ],
+    changed: ['context', 'rateLimits'],
+  })
+
+  const ui = await $.ui.mount(FAIXA)
+  expect((await ui.find({ type: 'Text', text: /^91%$/ }))?.props.color).toBe('red')
+  expect((await ui.find({ type: 'Text', text: /^43%$/ }))?.props.color).toBe('green')
+  expect((await ui.find({ type: 'Text', text: /^25%$/ }))?.props.color).toBe('green')
+  expect((await ui.find({ type: 'Text', text: /atualizado/ }))?.text).toContain('atualizado')
+  await ui.unmount()
+})

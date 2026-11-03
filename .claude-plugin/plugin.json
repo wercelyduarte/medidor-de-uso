@@ -1,7 +1,7 @@
 {
   "name": "medidor-de-uso",
-  "version": "0.3.0",
-  "description": "Painel ao lado do chat com o consumo do plano: limites de 5 horas e 7 dias, contexto e custo da sessão",
+  "version": "0.4.0",
+  "description": "Linha acima da caixa de mensagem e painel com o consumo do plano: limites de 5 horas e 7 dias, contexto e custo da sessão",
   "types": "./types/index.d.ts",
   "author": {
     "name": "Wercely"

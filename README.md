@@ -36,8 +36,8 @@ No app desktop (aba Code): clique no **+** ao lado da caixa de mensagem, depois 
 
 ## Uso
 
-- O painel abre sozinho ao iniciar uma sessão, no modo compacto. O botão **Detalhes** mostra a versão completa e **Compacto** volta; a escolha fica guardada.
-- Feche no X do painel; `/consumo` abre de novo.
+- Na aba Code do app e no terminal, uma linha colorida fica logo acima da caixa de mensagem, com as porcentagens e o horário da última atualização. Ela não aparece no VS Code.
+- `/consumo` abre o painel, no modo compacto. O botão **Detalhes** mostra a versão completa e **Compacto** volta; a escolha fica guardada. Feche no X do painel.
 - Para desligar de vez: **+** ao lado da caixa de mensagem, **Plugins**, e desative "medidor-de-uso".
 
 A API de mods do Claude Code ainda está em acesso antecipado e pode mudar entre versões.

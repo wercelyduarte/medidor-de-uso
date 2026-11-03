@@ -77,7 +77,6 @@ export const register: Register = on => {
     await update($, medicao, () => medir(u, agora))
     const preferencia = (await $.store.get(PREFERENCIA)) === true
     await update($, detalhado, () => preferencia)
-    void $.ui.open({ id: PANE, title: TITULO, columns: 32 })
 
     return next(e)
   })
@@ -93,6 +92,30 @@ export const register: Register = on => {
     await update($, medicao, () => medir(e, agora))
 
     return next(e)
+  })
+
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const m = await read($, medicao)
+    if (e.props.hasSurvey || !m || (m.rateLimits.length === 0 && m.contextoPct === undefined)) {
+      return next(e)
+    }
+
+    const { Text } = $.ui.resolve(e)
+    const partes: [string, number][] = m.rateLimits.map(r => [CURTOS[r.kind] ?? r.kind, r.percentUsed])
+    if (m.contextoPct !== undefined) partes.push(['ctx', m.contextoPct])
+
+    return (
+      <Text>
+        {partes.map(([rotulo, pct]) => (
+          <Text key={rotulo}>
+            <Text dimColor>{rotulo} </Text>
+            <Text color={cor(pct)}>{Math.round(pct)}%</Text>
+            <Text dimColor> · </Text>
+          </Text>
+        ))}
+        <Text dimColor>atualizado {hora(new Date(m.medidoEm))}</Text>
+      </Text>
+    )
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
