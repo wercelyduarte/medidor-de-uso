@@ -100,21 +100,23 @@ export const register: Register = on => {
       return next(e)
     }
 
-    const { Text } = $.ui.resolve(e)
+    const { Box, Text } = $.ui.resolve(e)
     const partes: [string, number][] = m.rateLimits.map(r => [CURTOS[r.kind] ?? r.kind, r.percentUsed])
     if (m.contextoPct !== undefined) partes.push(['ctx', m.contextoPct])
 
     return (
-      <Text>
-        {partes.map(([rotulo, pct]) => (
-          <Text key={rotulo}>
-            <Text dimColor>{rotulo} </Text>
-            <Text color={cor(pct)}>{Math.round(pct)}%</Text>
-            <Text dimColor> · </Text>
-          </Text>
-        ))}
-        <Text dimColor>atualizado {hora(new Date(m.medidoEm))}</Text>
-      </Text>
+      <Box justifyContent="center">
+        <Text>
+          {partes.map(([rotulo, pct]) => (
+            <Text key={rotulo}>
+              <Text dimColor>{rotulo} </Text>
+              <Text color={cor(pct)}>{Math.round(pct)}%</Text>
+              <Text dimColor> · </Text>
+            </Text>
+          ))}
+          <Text dimColor>atualizado {hora(new Date(m.medidoEm))}</Text>
+        </Text>
+      </Box>
     )
   })
 
@@ -155,7 +157,7 @@ export const register: Register = on => {
     const semDados = !m || m.rateLimits.length === 0
 
     return (
-      <Box flexDirection="column" gap={isDetalhado ? 1 : 0}>
+      <Box flexDirection="column" alignItems="center" gap={isDetalhado ? 1 : 0}>
         {semDados ? (
           <Text dimColor>
             Os limites aparecem após a primeira resposta do Claude.
