@@ -16,7 +16,9 @@ Os números vêm das próprias respostas do Claude e se atualizam a cada respost
 
 ## Instalação
 
-**No Windows, com dois cliques:** baixe o [instalar.cmd](https://github.com/wercelyduarte/medidor-de-uso/raw/main/instalar.cmd) e dê dois cliques nele. Precisa ter o Claude Code instalado. Se o Windows mostrar "o Windows protegeu o computador", clique em **Mais informações** e **Executar assim mesmo**: o arquivo não é assinado, e você pode abrir no Bloco de Notas para ver os dois comandos que ele roda.
+**No Windows, com o instalador:** baixe o arquivo `MedidorDeUso-….msi` da [última versão](https://github.com/wercelyduarte/medidor-de-uso/releases/latest) e dê dois cliques. Não pede senha de administrador, e no fim uma janela confirma a instalação. Para remover: Configurações do Windows, Aplicativos, "Medidor de uso para Claude Code". O instalador não é assinado: se o Windows avisar, clique em **Mais informações** e **Executar assim mesmo**.
+
+**Ou com o script:** baixe o [instalar.cmd](https://github.com/wercelyduarte/medidor-de-uso/raw/main/instalar.cmd) e dê dois cliques nele. Precisa ter o Claude Code instalado. Se o Windows mostrar "o Windows protegeu o computador", clique em **Mais informações** e **Executar assim mesmo**: o arquivo não é assinado, e você pode abrir no Bloco de Notas para ver os dois comandos que ele roda.
 
 Dentro do Claude Code:
 
