@@ -1,6 +1,6 @@
 {
   "name": "medidor-de-uso",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Linha acima da caixa de mensagem e painel com o consumo do plano: limites de 5 horas e 7 dias, contexto e custo da sessão",
   "types": "./types/index.d.ts",
   "author": {

@@ -56,15 +56,39 @@ function barra(pct: number, largura: number): string {
 
 const cor = (pct: number) => (pct >= 90 ? 'red' : pct >= 70 ? 'yellow' : 'green')
 
+// Order the windows always appear in; unknown kinds go last.
+const ORDEM = ['five_hour', 'seven_day', 'seven_day_opus', 'seven_day_sonnet', 'spend_limit']
+const posicao = (kind: string) => (ORDEM.includes(kind) ? ORDEM.indexOf(kind) : ORDEM.length)
+
+// A response often reports only some windows (often just the 7-day one). A window it
+// leaves out keeps its last reading until that window resets, so the 5-hour figure
+// does not vanish between responses.
+function juntar(novas: Janela[], antigas: Janela[] | undefined, agora: number): Janela[] {
+  const vistas = new Set(novas.map(r => r.kind))
+  const mantidas = (antigas ?? []).filter(
+    r => !vistas.has(r.kind) && r.resetsAt !== undefined && Date.parse(r.resetsAt) > agora,
+  )
+
+  return [...novas, ...mantidas].sort((a, b) => posicao(a.kind) - posicao(b.kind))
+}
+
 const medir = (
   u: Pick<SessionUsage, 'rateLimits' | 'context' | 'cost'>,
   agora: number,
+  anterior: Medicao | null,
 ): Medicao => ({
-  rateLimits: u.rateLimits,
-  contextoPct: u.context.percent,
-  custoUsd: u.cost?.usd,
+  rateLimits: juntar(u.rateLimits, anterior?.rateLimits, agora),
+  contextoPct: u.context.percent ?? anterior?.contextoPct,
+  custoUsd: u.cost?.usd ?? anterior?.custoUsd,
   medidoEm: agora,
 })
+
+// With any subscription reading, the 5-hour window always has its place: "—" until
+// a response reports it.
+const comCincoHoras = (janelas: Janela[]): (Janela | { kind: 'five_hour'; percentUsed?: undefined })[] =>
+  janelas.length === 0 || janelas.some(r => r.kind === 'five_hour')
+    ? janelas
+    : [{ kind: 'five_hour' }, ...janelas]
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
@@ -74,7 +98,7 @@ export const register: Register = on => {
     })
     const u = await $.session.usage()
     const agora = await $.clock.now()
-    await update($, medicao, () => medir(u, agora))
+    await update($, medicao, anterior => medir(u, agora, anterior))
     const preferencia = (await $.store.get(PREFERENCIA)) === true
     await update($, detalhado, () => preferencia)
 
@@ -89,7 +113,7 @@ export const register: Register = on => {
 
   on('session.measure', async ($, e, next) => {
     const agora = await $.clock.now()
-    await update($, medicao, () => medir(e, agora))
+    await update($, medicao, anterior => medir(e, agora, anterior))
 
     return next(e)
   })
@@ -101,7 +125,10 @@ export const register: Register = on => {
     }
 
     const { Box, Text } = $.ui.resolve(e)
-    const partes: [string, number][] = m.rateLimits.map(r => [CURTOS[r.kind] ?? r.kind, r.percentUsed])
+    const partes: [string, number | undefined][] = comCincoHoras(m.rateLimits).map(r => [
+      CURTOS[r.kind] ?? r.kind,
+      r.percentUsed,
+    ])
     if (m.contextoPct !== undefined) partes.push(['ctx', m.contextoPct])
 
     return (
@@ -110,7 +137,11 @@ export const register: Register = on => {
           {partes.map(([rotulo, pct]) => (
             <Text key={rotulo}>
               <Text dimColor>{rotulo} </Text>
-              <Text color={cor(pct)}>{Math.round(pct)}%</Text>
+              {pct === undefined ? (
+                <Text dimColor>—</Text>
+              ) : (
+                <Text color={cor(pct)}>{Math.round(pct)}%</Text>
+              )}
               <Text dimColor> · </Text>
             </Text>
           ))}
@@ -143,13 +174,21 @@ export const register: Register = on => {
       </Text>
     )
 
-    const compacta = (r: Janela) =>
-      linha(CURTOS[r.kind] ?? r.kind, r.percentUsed, 10, quando(r.resetsAt, agora))
+    const SEM_LEITURA = 'sem leitura ainda'
 
-    const detalhada = (r: Janela) => (
+    const compacta = (r: Janela | { kind: string; percentUsed?: undefined; resetsAt?: undefined }) =>
+      r.percentUsed === undefined ? (
+        <Text key={r.kind}>
+          {CURTOS[r.kind] ?? r.kind} <Text dimColor>— {SEM_LEITURA}</Text>
+        </Text>
+      ) : (
+        linha(CURTOS[r.kind] ?? r.kind, r.percentUsed, 10, quando(r.resetsAt, agora))
+      )
+
+    const detalhada = (r: Janela | { kind: string; percentUsed?: undefined; resetsAt?: undefined }) => (
       <Box flexDirection="column" key={r.kind}>
         <Text bold>{NOMES[r.kind] ?? r.kind}</Text>
-        {linha('', r.percentUsed, 16, '')}
+        {r.percentUsed === undefined ? <Text dimColor>{SEM_LEITURA}</Text> : linha('', r.percentUsed, 16, '')}
         {r.resetsAt && <Text dimColor>reinicia {quando(r.resetsAt, agora)}</Text>}
       </Box>
     )
@@ -163,7 +202,7 @@ export const register: Register = on => {
             Os limites aparecem após a primeira resposta do Claude.
           </Text>
         ) : (
-          m.rateLimits.map(isDetalhado ? detalhada : compacta)
+          comCincoHoras(m.rateLimits).map(isDetalhado ? detalhada : compacta)
         )}
         {m?.contextoPct !== undefined &&
           (isDetalhado ? (

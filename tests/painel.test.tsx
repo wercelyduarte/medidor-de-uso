@@ -112,3 +112,60 @@ test('linha acima da caixa: painel não abre sozinho e cores por faixa', async (
   expect((await ui.find({ type: 'Text', text: /atualizado/ }))?.text).toContain('atualizado')
   await ui.unmount()
 })
+
+test('5 horas não some quando a resposta traz só o limite semanal', async ($, on) => {
+  let agora = Date.parse('2026-11-12T12:00:00Z')
+  on('command.register', () => ({ value: { command: 'consumo' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('clock.now', () => ({ value: agora }))
+  on('store.get', () => ({ value: undefined }))
+  on('store.set', () => ({ value: undefined }))
+  on('session.usage', () => ({
+    value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] },
+  }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+
+  // Only the weekly window so far: the 5-hour one keeps its place.
+  await $.session.measure({
+    context: { window: 200000, tokens: 20000, percent: 10 },
+    rateLimits: [{ kind: 'seven_day', percentUsed: 30, resetsAt: '2026-11-18T09:00:00Z' }],
+    changed: ['context', 'rateLimits'],
+  })
+  let ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect((await ui.find({ type: 'Text', text: /^5h/ }))?.text).toContain('sem leitura')
+  expect((await ui.find({ type: 'Text', text: /^7d/ }))?.text).toContain('30%')
+  await ui.unmount()
+
+  // Both windows, then a response with the weekly one only: the 5-hour reading stays.
+  await $.session.measure({
+    context: { window: 200000, tokens: 20000, percent: 10 },
+    rateLimits: [
+      { kind: 'seven_day', percentUsed: 31, resetsAt: '2026-11-18T09:00:00Z' },
+      { kind: 'five_hour', percentUsed: 12, resetsAt: '2026-11-12T15:00:00Z' },
+    ],
+    changed: ['rateLimits'],
+  })
+  await $.session.measure({
+    context: { window: 200000, tokens: 20000, percent: 11 },
+    rateLimits: [{ kind: 'seven_day', percentUsed: 32, resetsAt: '2026-11-18T09:00:00Z' }],
+    changed: ['context', 'rateLimits'],
+  })
+  ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect((await ui.find({ type: 'Text', text: /^5h/ }))?.text).toContain('12%')
+  expect((await ui.find({ type: 'Text', text: /^7d/ }))?.text).toContain('32%')
+  await ui.unmount()
+
+  // After the 5-hour window resets, its old reading is dropped.
+  agora = Date.parse('2026-11-12T16:00:00Z')
+  await $.session.measure({
+    context: { window: 200000, tokens: 20000, percent: 11 },
+    rateLimits: [{ kind: 'seven_day', percentUsed: 33, resetsAt: '2026-11-18T09:00:00Z' }],
+    changed: ['rateLimits'],
+  })
+  ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect((await ui.find({ type: 'Text', text: /^5h/ }))?.text).toContain('sem leitura')
+  await ui.unmount()
+})
