@@ -10,11 +10,14 @@ const TITULO = 'Medidor de uso'
 const medicao = atom(
   { plugin: 'medidor-de-uso', key: 'medicao' } as const,
   null as Medicao | null,
-  { shape: 'medicao-2' },
+  { shape: 'medicao-3' },
 )
 // The view the person chose; kept across sessions in $.store under this key.
 const detalhado = atom({ plugin: 'medidor-de-uso', key: 'detalhado' } as const, false)
 const PREFERENCIA = 'detalhado'
+// The last reading of every window, kept across sessions in $.store: a session whose
+// responses never report the 5-hour window still shows the last one seen.
+const ULTIMAS = 'janelas'
 
 const NOMES: Record<string, string> = {
   five_hour: 'Limite de 5 horas',
@@ -60,17 +63,35 @@ const cor = (pct: number) => (pct >= 90 ? 'red' : pct >= 70 ? 'yellow' : 'green'
 const ORDEM = ['five_hour', 'seven_day', 'seven_day_opus', 'seven_day_sonnet', 'spend_limit']
 const posicao = (kind: string) => (ORDEM.includes(kind) ? ORDEM.indexOf(kind) : ORDEM.length)
 
+const HORA = 3600_000
+// How long a window lasts, for readings that came without a reset time.
+const duracao = (kind: string) => (kind.startsWith('seven_day') ? 7 * 24 * HORA : 5 * HORA)
+
+// Whether an old reading still describes the current window.
+function valeAinda(r: Janela, agora: number): boolean {
+  if (r.resetsAt !== undefined) return Date.parse(r.resetsAt) > agora
+  return r.lidaEm !== undefined && agora - r.lidaEm < duracao(r.kind)
+}
+
 // A response often reports only some windows (often just the 7-day one). A window it
 // leaves out keeps its last reading until that window resets, so the 5-hour figure
-// does not vanish between responses.
+// does not vanish between responses, nor between sessions.
 function juntar(novas: Janela[], antigas: Janela[] | undefined, agora: number): Janela[] {
   const vistas = new Set(novas.map(r => r.kind))
-  const mantidas = (antigas ?? []).filter(
-    r => !vistas.has(r.kind) && r.resetsAt !== undefined && Date.parse(r.resetsAt) > agora,
-  )
+  const mantidas = (antigas ?? []).filter(r => !vistas.has(r.kind) && valeAinda(r, agora))
 
-  return [...novas, ...mantidas].sort((a, b) => posicao(a.kind) - posicao(b.kind))
+  return [...novas.map(r => ({ ...r, lidaEm: agora })), ...mantidas].sort(
+    (a, b) => posicao(a.kind) - posicao(b.kind),
+  )
 }
+
+const ehJanelas = (v: unknown): v is Janela[] =>
+  Array.isArray(v) &&
+  v.every(r => r && typeof r.kind === 'string' && typeof r.percentUsed === 'number')
+
+// A reading not from the latest response: shown with the time it was read.
+const antiga = (r: { lidaEm?: number }, m: Medicao) =>
+  r.lidaEm !== undefined && m.medidoEm - r.lidaEm > 60_000
 
 const medir = (
   u: Pick<SessionUsage, 'rateLimits' | 'context' | 'cost'>,
@@ -85,7 +106,8 @@ const medir = (
 
 // With any subscription reading, the 5-hour window always has its place: "—" until
 // a response reports it.
-const comCincoHoras = (janelas: Janela[]): (Janela | { kind: 'five_hour'; percentUsed?: undefined })[] =>
+type Vaga = { kind: string; percentUsed?: undefined; resetsAt?: undefined; lidaEm?: undefined }
+const comCincoHoras = (janelas: Janela[]): (Janela | Vaga)[] =>
   janelas.length === 0 || janelas.some(r => r.kind === 'five_hour')
     ? janelas
     : [{ kind: 'five_hour' }, ...janelas]
@@ -98,7 +120,10 @@ export const register: Register = on => {
     })
     const u = await $.session.usage()
     const agora = await $.clock.now()
-    await update($, medicao, anterior => medir(u, agora, anterior))
+    const guardadas = await $.store.get(ULTIMAS)
+    await update($, medicao, anterior =>
+      medir(u, agora, anterior ?? (ehJanelas(guardadas) ? { rateLimits: guardadas, medidoEm: agora } : null)),
+    )
     const preferencia = (await $.store.get(PREFERENCIA)) === true
     await update($, detalhado, () => preferencia)
 
@@ -113,7 +138,8 @@ export const register: Register = on => {
 
   on('session.measure', async ($, e, next) => {
     const agora = await $.clock.now()
-    await update($, medicao, anterior => medir(e, agora, anterior))
+    const m = await update($, medicao, anterior => medir(e, agora, anterior))
+    if (e.rateLimits.length > 0 && m) await $.store.set(ULTIMAS, m.rateLimits)
 
     return next(e)
   })
@@ -125,23 +151,25 @@ export const register: Register = on => {
     }
 
     const { Box, Text } = $.ui.resolve(e)
-    const partes: [string, number | undefined][] = comCincoHoras(m.rateLimits).map(r => [
+    const partes: [string, number | undefined, string][] = comCincoHoras(m.rateLimits).map(r => [
       CURTOS[r.kind] ?? r.kind,
       r.percentUsed,
+      r.lidaEm !== undefined && antiga(r, m) ? ` (${hora(new Date(r.lidaEm))})` : '',
     ])
-    if (m.contextoPct !== undefined) partes.push(['ctx', m.contextoPct])
+    if (m.contextoPct !== undefined) partes.push(['ctx', m.contextoPct, ''])
 
     return (
       <Box justifyContent="center">
         <Text>
-          {partes.map(([rotulo, pct]) => (
+          {partes.map(([rotulo, pct, lido]) => (
             <Text key={rotulo}>
               <Text dimColor>{rotulo} </Text>
               {pct === undefined ? (
-                <Text dimColor>—</Text>
+                <Text dimColor>aguardando</Text>
               ) : (
                 <Text color={cor(pct)}>{Math.round(pct)}%</Text>
               )}
+              {lido && <Text dimColor>{lido}</Text>}
               <Text dimColor> · </Text>
             </Text>
           ))}
@@ -174,22 +202,28 @@ export const register: Register = on => {
       </Text>
     )
 
-    const SEM_LEITURA = 'sem leitura ainda'
+    const SEM_LEITURA = 'aguardando o Claude informar'
 
-    const compacta = (r: Janela | { kind: string; percentUsed?: undefined; resetsAt?: undefined }) =>
+    const lida = (r: Janela) =>
+      m && r.lidaEm !== undefined && antiga(r, m) ? `lido ${quando(new Date(r.lidaEm).toISOString(), agora)}` : ''
+
+    const compacta = (r: Janela | Vaga) =>
       r.percentUsed === undefined ? (
         <Text key={r.kind}>
-          {CURTOS[r.kind] ?? r.kind} <Text dimColor>— {SEM_LEITURA}</Text>
+          {CURTOS[r.kind] ?? r.kind} <Text dimColor>{SEM_LEITURA}</Text>
         </Text>
       ) : (
-        linha(CURTOS[r.kind] ?? r.kind, r.percentUsed, 10, quando(r.resetsAt, agora))
+        linha(CURTOS[r.kind] ?? r.kind, r.percentUsed, 10, quando(r.resetsAt, agora) || lida(r))
       )
 
-    const detalhada = (r: Janela | { kind: string; percentUsed?: undefined; resetsAt?: undefined }) => (
+    const detalhada = (r: Janela | Vaga) => (
       <Box flexDirection="column" key={r.kind}>
         <Text bold>{NOMES[r.kind] ?? r.kind}</Text>
         {r.percentUsed === undefined ? <Text dimColor>{SEM_LEITURA}</Text> : linha('', r.percentUsed, 16, '')}
         {r.resetsAt && <Text dimColor>reinicia {quando(r.resetsAt, agora)}</Text>}
+        {r.percentUsed !== undefined && lida(r) && (
+          <Text dimColor>{lida(r)} (o Claude não informou de novo)</Text>
+        )}
       </Box>
     )
 

@@ -135,7 +135,7 @@ test('5 horas não some quando a resposta traz só o limite semanal', async ($, 
     changed: ['context', 'rateLimits'],
   })
   let ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  expect((await ui.find({ type: 'Text', text: /^5h/ }))?.text).toContain('sem leitura')
+  expect((await ui.find({ type: 'Text', text: /^5h/ }))?.text).toContain('aguardando')
   expect((await ui.find({ type: 'Text', text: /^7d/ }))?.text).toContain('30%')
   await ui.unmount()
 
@@ -166,6 +166,59 @@ test('5 horas não some quando a resposta traz só o limite semanal', async ($, 
     changed: ['rateLimits'],
   })
   ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  expect((await ui.find({ type: 'Text', text: /^5h/ }))?.text).toContain('sem leitura')
+  expect((await ui.find({ type: 'Text', text: /^5h/ }))?.text).toContain('aguardando')
+  await ui.unmount()
+})
+
+test('a leitura de 5 horas de outra sessão aparece com o horário em que foi lida', async ($, on) => {
+  const lidaEm = Date.parse('2026-11-13T09:10:00Z')
+  const guardado: Record<string, unknown> = {
+    janelas: [
+      { kind: 'five_hour', percentUsed: 81, lidaEm },
+      { kind: 'seven_day', percentUsed: 70, resetsAt: '2026-11-18T09:00:00Z', lidaEm },
+    ],
+  }
+  let agora = Date.parse('2026-11-13T11:00:00Z')
+  on('command.register', () => ({ value: { command: 'consumo' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('clock.now', () => ({ value: agora }))
+  on('store.get', (_, e) => ({ value: guardado[e.key] }))
+  on('store.set', (_, e) => {
+    guardado[e.key] = e.value
+
+    return { value: undefined }
+  })
+  on('session.usage', () => ({
+    value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] },
+  }))
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+  on('session.measure', (_, e) => ({ changed: e.changed }))
+
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  await $.session.measure({
+    context: { window: 200000, tokens: 20000, percent: 10 },
+    rateLimits: [{ kind: 'seven_day', percentUsed: 72, resetsAt: '2026-11-18T09:00:00Z' }],
+    changed: ['context', 'rateLimits'],
+  })
+
+  let ui = await $.ui.mount(FAIXA)
+  expect((await ui.find({ type: 'Text', text: /^81%$/ }))?.props.color).toBe('yellow')
+  expect(await ui.find({ type: 'Text', text: /aguardando/ })).toBeUndefined()
+  await ui.unmount()
+  ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect((await ui.find({ type: 'Text', text: /^5h/ }))?.text).toContain('lido')
+  expect((await ui.find({ type: 'Text', text: /^7d/ }))?.text).toContain('72%')
+  await ui.unmount()
+  expect((guardado.janelas as { kind: string }[]).map(r => r.kind)).toEqual(['five_hour', 'seven_day'])
+
+  // Five hours after it was read, the old 5-hour reading no longer counts.
+  agora = Date.parse('2026-11-13T14:20:00Z')
+  await $.session.measure({
+    context: { window: 200000, tokens: 20000, percent: 10 },
+    rateLimits: [{ kind: 'seven_day', percentUsed: 73, resetsAt: '2026-11-18T09:00:00Z' }],
+    changed: ['rateLimits'],
+  })
+  ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect((await ui.find({ type: 'Text', text: /^5h/ }))?.text).toContain('aguardando')
   await ui.unmount()
 })
