@@ -222,3 +222,46 @@ test('a leitura de 5 horas de outra sessão aparece com o horário em que foi li
   expect((await ui.find({ type: 'Text', text: /^5h/ }))?.text).toContain('aguardando')
   await ui.unmount()
 })
+
+test('lê o limite de 5 horas do cartão de uso do app', async ($, on) => {
+  const guardado: Record<string, unknown> = {}
+  on('command.register', () => ({ value: { command: 'consumo' } }))
+  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('clock.now', () => ({ value: Date.parse('2026-11-13T12:00:00Z') }))
+  on('store.get', (_, e) => ({ value: guardado[e.key] }))
+  on('store.set', (_, e) => {
+    guardado[e.key] = e.value
+
+    return { value: undefined }
+  })
+  on('session.usage', () => ({
+    value: { startedAt: 0, context: { window: 200000 }, rateLimits: [] },
+  }))
+  on('mcp.call', (_, e) => {
+    expect(e.tool).toBe('get_usage')
+    const plan = {
+      status: 'ok',
+      windows: [
+        { label: '5-hour limit', percentUsed: 95, resetsAt: '2026-11-13T16:09:59Z' },
+        { label: 'Weekly · all models', percentUsed: 74, resetsAt: '2026-11-17T00:59:59Z' },
+        { label: 'Weekly · Fable', percentUsed: 53, resetsAt: '2026-11-17T00:59:59Z' },
+      ],
+    }
+
+    return { value: { isError: false, content: [{ type: 'text', text: JSON.stringify({ plan }) }] } }
+  })
+  on('session.start', (_, e) => ({ cwd: e.cwd }))
+
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+
+  let ui = await $.ui.mount(FAIXA)
+  expect((await ui.find({ type: 'Text', text: /^95%$/ }))?.props.color).toBe('red')
+  expect((await ui.find({ type: 'Text', text: /^74%$/ }))?.props.color).toBe('yellow')
+  expect(await ui.find({ type: 'Text', text: /aguardando/ })).toBeUndefined()
+  await ui.unmount()
+
+  ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect((await ui.find({ type: 'Text', text: /^7d Fable/ }))?.text).toContain('53%')
+  await ui.unmount()
+  expect((guardado.janelas as { kind: string }[]).map(r => r.kind)).toEqual(['five_hour', 'seven_day', 'seven_day_fable'])
+})

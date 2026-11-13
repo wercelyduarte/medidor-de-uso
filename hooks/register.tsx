@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { Register, SessionUsage } from 'claude-code'
+import type { EngineInterface, Register, SessionUsage } from 'claude-code'
 
 import type { Janela, Medicao } from '../types'
 
@@ -33,6 +33,14 @@ const CURTOS: Record<string, string> = {
   seven_day_sonnet: '7d Sonnet',
   spend_limit: 'Gastos',
 }
+// Kinds the app's own usage card names, e.g. "Weekly · Fable" -> seven_day_fable.
+const capitalizar = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+const modeloDe = (kind: string) => capitalizar(kind.replace(/^seven_day_/, ''))
+const nomeDe = (kind: string) =>
+  NOMES[kind] ?? (kind.startsWith('seven_day_') ? `Semanal: ${modeloDe(kind)}` : kind)
+const curtoDe = (kind: string) =>
+  CURTOS[kind] ?? (kind.startsWith('seven_day_') ? `7d ${modeloDe(kind)}` : kind)
+
 const DIAS = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb']
 
 const doisDigitos = (n: number) => String(n).padStart(2, '0')
@@ -85,6 +93,71 @@ function juntar(novas: Janela[], antigas: Janela[] | undefined, agora: number): 
   )
 }
 
+// The app's usage card ("5-hour limit", "Weekly · all models", "Weekly · Fable") as
+// windows. It answers even when no response has reported the 5-hour window.
+function tipoDoRotulo(rotulo: string): string | undefined {
+  const r = rotulo.toLowerCase()
+  if (r.includes('5-hour') || r.includes('5 hour') || r.includes('session')) return 'five_hour'
+  if (!r.startsWith('weekly')) return undefined
+  const modelo = r.split('·')[1]?.trim() ?? 'all models'
+  if (modelo === 'all models' || modelo === '') return 'seven_day'
+  return `seven_day_${modelo.replace(/[^a-z0-9]+/g, '_')}`
+}
+
+function janelasDoPlano(texto: string): Janela[] {
+  let dados: unknown
+  try {
+    dados = JSON.parse(texto)
+  } catch {
+    return []
+  }
+  const plano = (dados as { plan?: { status?: string; windows?: unknown } })?.plan
+  if (plano?.status !== 'ok' || !Array.isArray(plano.windows)) return []
+  const janelas: Janela[] = []
+  for (const w of plano.windows as { label?: unknown; percentUsed?: unknown; resetsAt?: unknown }[]) {
+    const kind = typeof w?.label === 'string' ? tipoDoRotulo(w.label) : undefined
+    if (!kind || typeof w.percentUsed !== 'number') continue
+    janelas.push({
+      kind,
+      percentUsed: w.percentUsed,
+      ...(typeof w.resetsAt === 'string' ? { resetsAt: w.resetsAt } : {}),
+    })
+  }
+  return janelas
+}
+
+// The desktop app's usage tool; absent elsewhere (the terminal), where the meter keeps
+// to what responses report.
+const SERVIDOR = 'ccd_session_mgmt'
+const INTERVALO = 60_000
+let consultadoEm = 0
+
+async function lerPlano($: EngineInterface, agora: number, forcar = false): Promise<void> {
+  if (!forcar && agora - consultadoEm < INTERVALO) return
+  consultadoEm = agora
+  let janelas: Janela[] = []
+  try {
+    const r = await $.mcp.call(SERVIDOR, 'get_usage', {})
+    if (r.isError) return
+    for (const bloco of r.content) {
+      if (bloco.type === 'text' && typeof (bloco as { text?: unknown }).text === 'string') {
+        janelas = janelasDoPlano((bloco as { text: string }).text)
+        if (janelas.length > 0) break
+      }
+    }
+  } catch {
+    return
+  }
+  if (janelas.length === 0) return
+  const m = await update($, medicao, anterior => ({
+    rateLimits: juntar(janelas, anterior?.rateLimits, agora),
+    contextoPct: anterior?.contextoPct,
+    custoUsd: anterior?.custoUsd,
+    medidoEm: agora,
+  }))
+  if (m) await $.store.set(ULTIMAS, m.rateLimits)
+}
+
 const ehJanelas = (v: unknown): v is Janela[] =>
   Array.isArray(v) &&
   v.every(r => r && typeof r.kind === 'string' && typeof r.percentUsed === 'number')
@@ -126,11 +199,13 @@ export const register: Register = on => {
     )
     const preferencia = (await $.store.get(PREFERENCIA)) === true
     await update($, detalhado, () => preferencia)
+    await lerPlano($, agora, true)
 
     return next(e)
   })
 
   on('command.run', { command: 'consumo' }, async $ => {
+    await lerPlano($, await $.clock.now(), true)
     await $.ui.open({ id: PANE, title: TITULO, columns: 32 })
 
     return { text: 'Medidor de uso aberto.' }
@@ -140,6 +215,7 @@ export const register: Register = on => {
     const agora = await $.clock.now()
     const m = await update($, medicao, anterior => medir(e, agora, anterior))
     if (e.rateLimits.length > 0 && m) await $.store.set(ULTIMAS, m.rateLimits)
+    await lerPlano($, agora)
 
     return next(e)
   })
@@ -152,7 +228,7 @@ export const register: Register = on => {
 
     const { Box, Text } = $.ui.resolve(e)
     const partes: [string, number | undefined, string][] = comCincoHoras(m.rateLimits).map(r => [
-      CURTOS[r.kind] ?? r.kind,
+      curtoDe(r.kind),
       r.percentUsed,
       r.lidaEm !== undefined && antiga(r, m) ? ` (${hora(new Date(r.lidaEm))})` : '',
     ])
@@ -210,15 +286,15 @@ export const register: Register = on => {
     const compacta = (r: Janela | Vaga) =>
       r.percentUsed === undefined ? (
         <Text key={r.kind}>
-          {CURTOS[r.kind] ?? r.kind} <Text dimColor>{SEM_LEITURA}</Text>
+          {curtoDe(r.kind)} <Text dimColor>{SEM_LEITURA}</Text>
         </Text>
       ) : (
-        linha(CURTOS[r.kind] ?? r.kind, r.percentUsed, 10, quando(r.resetsAt, agora) || lida(r))
+        linha(curtoDe(r.kind), r.percentUsed, 10, quando(r.resetsAt, agora) || lida(r))
       )
 
     const detalhada = (r: Janela | Vaga) => (
       <Box flexDirection="column" key={r.kind}>
-        <Text bold>{NOMES[r.kind] ?? r.kind}</Text>
+        <Text bold>{nomeDe(r.kind)}</Text>
         {r.percentUsed === undefined ? <Text dimColor>{SEM_LEITURA}</Text> : linha('', r.percentUsed, 16, '')}
         {r.resetsAt && <Text dimColor>reinicia {quando(r.resetsAt, agora)}</Text>}
         {r.percentUsed !== undefined && lida(r) && (
