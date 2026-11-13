@@ -130,15 +130,20 @@ function janelasDoPlano(texto: string): Janela[] {
 // to what responses report.
 const SERVIDOR = 'ccd_session_mgmt'
 const INTERVALO = 60_000
+// Early in a session the app's tools may not be connected yet: try again sooner.
+const NOVA_TENTATIVA = 10_000
 let consultadoEm = 0
 
 async function lerPlano($: EngineInterface, agora: number, forcar = false): Promise<void> {
   if (!forcar && agora - consultadoEm < INTERVALO) return
   consultadoEm = agora
+  const falhou = () => {
+    consultadoEm = agora - INTERVALO + NOVA_TENTATIVA
+  }
   let janelas: Janela[] = []
   try {
     const r = await $.mcp.call(SERVIDOR, 'get_usage', {})
-    if (r.isError) return
+    if (r.isError) return falhou()
     for (const bloco of r.content) {
       if (bloco.type === 'text' && typeof (bloco as { text?: unknown }).text === 'string') {
         janelas = janelasDoPlano((bloco as { text: string }).text)
@@ -146,9 +151,9 @@ async function lerPlano($: EngineInterface, agora: number, forcar = false): Prom
       }
     }
   } catch {
-    return
+    return falhou()
   }
-  if (janelas.length === 0) return
+  if (janelas.length === 0) return falhou()
   const m = await update($, medicao, anterior => ({
     rateLimits: juntar(janelas, anterior?.rateLimits, agora),
     contextoPct: anterior?.contextoPct,
@@ -199,9 +204,11 @@ export const register: Register = on => {
     )
     const preferencia = (await $.store.get(PREFERENCIA)) === true
     await update($, detalhado, () => preferencia)
+    const r = await next(e)
+    // After the start, once the app's tools have had their chance to connect.
     await lerPlano($, agora, true)
 
-    return next(e)
+    return r
   })
 
   on('command.run', { command: 'consumo' }, async $ => {
@@ -221,6 +228,9 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    // Keeps the plan figures fresh while the line is drawn (at most once a minute);
+    // not awaited, so drawing never waits on it.
+    void $.clock.now().then(agora => lerPlano($, agora)).catch(() => {})
     const m = await read($, medicao)
     if (e.props.hasSurvey || !m || (m.rateLimits.length === 0 && m.contextoPct === undefined)) {
       return next(e)
